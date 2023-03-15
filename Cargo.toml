@@ -1,0 +1,17 @@
+[package]
+name = "Forcex2Apic"
+version = "1.0.0"
+authors = ["Alex James"]
+edition = "2021"
+rust-version = "1.68"
+description = "UEFI driver to enable x2APIC (if the CPU supports it)"
+readme = "README.md"
+repository = "https://github.com/al3xtjames/Forcex2Apic"
+license = "Apache-2.0"
+
+[dependencies]
+r-efi = "4.2.0"
+
+[profile.release]
+opt-level = "z"
+strip = true

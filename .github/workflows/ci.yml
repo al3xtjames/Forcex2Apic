@@ -1,0 +1,60 @@
+name: Rust
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TARGET: x86_64-unknown-uefi
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Define environment variables
+      run: |
+        CRATE_NAME="$(basename $(cargo pkgid | cut '-d#' -f1))"
+        CRATE_VERSION="$(cargo pkgid | cut '-d#' -f2)"
+        ARTIFACT_BASE="${CRATE_NAME}-${CRATE_VERSION}-${CARGO_TARGET}"
+        echo "DEBUG_ARTIFACT=${ARTIFACT_BASE}-debug.zip" >> $GITHUB_ENV
+        echo "RELEASE_ARTIFACT=${ARTIFACT_BASE}-release.zip" >> $GITHUB_ENV
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        target: ${{ env.CARGO_TARGET }}
+
+    - name: Build (debug)
+      run: |
+        cargo build --verbose
+        zip -9 -j ${DEBUG_ARTIFACT} target/${CARGO_TARGET}/debug/*.efi
+
+    - name: Build (release)
+      run: |
+        cargo build --release --verbose
+        zip -9 -j ${RELEASE_ARTIFACT} target/${CARGO_TARGET}/release/*.efi
+
+    - name: Upload debug artfiact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ env.DEBUG_ARTIFACT }}
+        path: ${{ env.DEBUG_ARTIFACT }}
+
+    - name: Upload release artfiact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ env.RELEASE_ARTIFACT }}
+        path: ${{ env.RELEASE_ARTIFACT }}
+
+    - name: Upload to Release
+      if: github.event_name == 'release'
+      uses: svenstaro/upload-release-action@v2
+      with:
+        file: "*.zip"
+        file_glob: true

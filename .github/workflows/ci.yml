@@ -41,18 +41,20 @@ jobs:
         zip -9 -j ${RELEASE_ARTIFACT} target/${CARGO_TARGET}/release/*.efi
 
     - name: Upload debug artfiact
+      if: github.event_name != 'release'
       uses: actions/upload-artifact@v3
       with:
         name: ${{ env.DEBUG_ARTIFACT }}
         path: ${{ env.DEBUG_ARTIFACT }}
 
     - name: Upload release artfiact
+      if: github.event_name != 'release'
       uses: actions/upload-artifact@v3
       with:
         name: ${{ env.RELEASE_ARTIFACT }}
         path: ${{ env.RELEASE_ARTIFACT }}
 
-    - name: Upload to Release
+    - name: Upload artifacts to release
       if: github.event_name == 'release'
       uses: svenstaro/upload-release-action@v2
       with:

@@ -5,7 +5,7 @@
 
 use core::arch::asm;
 use core::arch::x86_64::{__cpuid, __get_cpuid_max};
-use r_efi::efi;
+use r_efi::{base, efi, protocols};
 
 const CPUID_ECX_FEAT_X2APIC: u32 = 1 << 21;
 
@@ -30,8 +30,18 @@ unsafe fn wrmsr(msr: u32, val: u64) {
     asm!("wrmsr", in("ecx") msr, in("edx") hi, in("eax") lo);
 }
 
+extern "efiapi" fn enable_x2apic(_: *mut core::ffi::c_void) {
+    let mut apic_base: u64 = unsafe { rdmsr(MSR_IA32_APIC_BASE) };
+    if apic_base & (APIC_BASE_GLOBAL_ENABLE | APIC_BASE_X2APIC_ENABLE)
+        != APIC_BASE_GLOBAL_ENABLE | APIC_BASE_X2APIC_ENABLE
+    {
+        apic_base |= APIC_BASE_GLOBAL_ENABLE | APIC_BASE_X2APIC_ENABLE;
+        unsafe { wrmsr(MSR_IA32_APIC_BASE, apic_base) };
+    }
+}
+
 #[export_name = "efi_main"]
-pub extern "C" fn main(_h: efi::Handle, _st: *mut efi::SystemTable) -> efi::Status {
+pub extern "efiapi" fn main(_h: efi::Handle, st: *mut efi::SystemTable) -> efi::Status {
     let (max_leaf, _) = unsafe { __get_cpuid_max(0) };
     if max_leaf < 1 {
         return efi::Status::UNSUPPORTED;
@@ -42,13 +52,31 @@ pub extern "C" fn main(_h: efi::Handle, _st: *mut efi::SystemTable) -> efi::Stat
         return efi::Status::UNSUPPORTED;
     }
 
-    let mut apic_base: u64 = unsafe { rdmsr(MSR_IA32_APIC_BASE) };
-    if apic_base & (APIC_BASE_GLOBAL_ENABLE | APIC_BASE_X2APIC_ENABLE)
-        != APIC_BASE_GLOBAL_ENABLE | APIC_BASE_X2APIC_ENABLE
-    {
-        apic_base |= APIC_BASE_GLOBAL_ENABLE | APIC_BASE_X2APIC_ENABLE;
-        unsafe { wrmsr(MSR_IA32_APIC_BASE, apic_base) };
+    let mut mp_services: *mut protocols::mp_services::Protocol = core::ptr::null_mut();
+    let mut status = (unsafe { (*((*st).boot_services)).locate_protocol })(
+        &mut protocols::mp_services::PROTOCOL_GUID,
+        core::ptr::null_mut(),
+        &mut mp_services as *mut _ as *mut *mut core::ffi::c_void,
+    );
+
+    if status != efi::Status::SUCCESS {
+        return status;
     }
 
+    status = (unsafe { (*mp_services).startup_all_aps })(
+        mp_services,
+        enable_x2apic,
+        base::Boolean::FALSE,
+        core::ptr::null_mut(),
+        10_000,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+
+    if status != efi::Status::SUCCESS {
+        return status;
+    }
+
+    enable_x2apic(core::ptr::null_mut());
     efi::Status::SUCCESS
 }
